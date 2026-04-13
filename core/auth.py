@@ -26,7 +26,7 @@ logger = structlog.get_logger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-ALLOWED_ROLES = {"director", "secretary", "admin"}
+ALLOWED_ROLES = {"director", "secretary", "admin", "manager"}
 
 
 class CurrentUser(BaseModel):
@@ -34,6 +34,7 @@ class CurrentUser(BaseModel):
     school_id: str
     role:      str
     sa_token:  str      # ServiceKey para chamar a eleve-api
+    name:      str      # nome do gestor (para personalização)
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
@@ -66,6 +67,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
         school_id: str | None = payload.get("school_id")
         role: str | None      = payload.get("role")
         sa_token: str | None  = payload.get("sa_token")
+        name: str             = payload.get("name") or payload.get("user_id") or "Gestor"
 
         if not all([user_id, school_id, role, sa_token]):
             raise credentials_exc
@@ -87,4 +89,5 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
         school_id=school_id,
         role=role,
         sa_token=sa_token,
+        name=name,
     )
