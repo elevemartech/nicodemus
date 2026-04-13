@@ -1,0 +1,59 @@
+[tool.poetry]
+name = "nicodemus-adm"
+version = "1.0.0"
+description = "Copiloto de gestão escolar — leitura de documentos e geração de relatórios"
+authors = ["Eleve <dev@eleve.com.br>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python           = "^3.12"
+
+# web
+fastapi          = "^0.115"
+uvicorn          = {extras = ["standard"], version = "^0.32"}
+python-multipart = "^0.0.18"
+
+# IA
+langgraph        = "^0.2"
+langchain        = "^0.3"
+langchain-openai = "^0.2"
+langchain-core   = "^0.3"
+openai           = "^1.54"
+
+# HTTP
+httpx            = "^0.27"
+
+# geração de arquivos
+openpyxl         = "^3.1"
+python-docx      = "^1.1"
+
+# auth
+python-jose      = {extras = ["cryptography"], version = "^3.3"}
+passlib          = {extras = ["bcrypt"], version = "^1.7"}
+
+# infra
+redis            = {extras = ["hiredis"], version = "^5.1"}
+pydantic-settings = "^2.6"
+structlog        = "^24.4"
+
+[tool.poetry.group.dev.dependencies]
+pytest           = "^8.3"
+pytest-asyncio   = "^0.24"
+respx            = "^0.21"
+ruff             = "^0.8"
+mypy             = "^1.13"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths    = ["tests"]
+
+[tool.ruff]
+line-length    = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[build-system]
+requires      = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
