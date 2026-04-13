@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/1"
 
+    # Banco de dados
+    database_url: str = "postgresql+asyncpg://nicodemus:nicodemus@localhost:5432/nicodemus_db"
+
     # File storage
     file_storage_ttl: int = 900          # 15 min em segundos
     file_storage_dir: str = "/tmp"

@@ -31,6 +31,11 @@ python-docx      = "^1.1"
 python-jose      = {extras = ["cryptography"], version = "^3.3"}
 passlib          = {extras = ["bcrypt"], version = "^1.7"}
 
+# banco de dados
+sqlalchemy       = {version = "^2.0", extras = ["asyncio"]}
+asyncpg          = "^0.30"
+alembic          = "^1.13"
+
 # infra
 redis            = {extras = ["hiredis"], version = "^5.1"}
 pydantic-settings = "^2.6"
