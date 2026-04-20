@@ -23,6 +23,7 @@ from core.settings import settings
 from routers.chat import router as chat_router
 from routers.doc import router as doc_router
 from routers.report import router as report_router
+from routers.sessions import router as sessions_router
 
 logger = structlog.get_logger(__name__)
 
@@ -49,9 +50,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(chat_router,   prefix="/chat",   tags=["Chat"])
-app.include_router(doc_router,    prefix="/doc",    tags=["Documentos"])
-app.include_router(report_router, prefix="/report", tags=["Relatórios"])
+app.include_router(sessions_router, prefix="/sessions", tags=["Sessões"])
+app.include_router(chat_router,     prefix="/chat",     tags=["Chat"])
+app.include_router(doc_router,      prefix="/doc",      tags=["Documentos"])
+app.include_router(report_router,   prefix="/report",   tags=["Relatórios"])
 
 
 @app.get("/health", tags=["Infra"])
