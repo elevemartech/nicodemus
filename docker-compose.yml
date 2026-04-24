@@ -1,0 +1,81 @@
+version: "3.9"
+
+# ===================================================================
+# Nicodemus ADM — Docker Compose (Produção)
+# Copiloto de gestão escolar | FastAPI + LangGraph
+# Banco: Supabase (externo) — configure DATABASE_URL no .env
+# ===================================================================
+
+services:
+
+  # ----------------------------------------------------------------
+  # App — FastAPI + LangGraph + Alembic
+  # ----------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: nicodemus_app
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn main:app
+               --host 0.0.0.0
+               --port 8001
+               --workers 2
+               --log-level info
+               --access-log"
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379/0
+      # DATABASE_URL vem do .env → aponta para Supabase
+      # Exemplo: postgresql+asyncpg://user:pass@host:5432/dbname
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 25s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
+
+  # ----------------------------------------------------------------
+  # Redis — memória conversacional (TTL 24h) + cache
+  # ----------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: nicodemus_redis
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+        --appendonly yes
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6381:6379"  # porta diferente dos outros projetos
+
+# ----------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------
+volumes:
+  redis_data:
