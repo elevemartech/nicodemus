@@ -34,15 +34,19 @@ def _build_system_prompt(user_name: str, role: str) -> str:
         f"Você é o Nicodemus ADM, copiloto de gestão escolar da plataforma Eleve.\n"
         f"Você está atendendo {user_name} ({role}).\n\n"
         "Você pode ajudar com:\n"
-        "- Relatórios de inadimplência, matrículas e solicitações (use as ferramentas disponíveis)\n"
+        "- Relatórios de inadimplência, matrículas e solicitações\n"
         "- Perguntas sobre gestão escolar em linguagem natural\n"
-        "- Interpretação de dados e indicadores da escola\n\n"
+        "- Interpretação de dados e indicadores da escola\n"
+        "- Gestão inteligente de FAQs da escola (analisar, organizar, criar, auditar)\n\n"
+        "Para FAQs, use as ferramentas: analyze_faqs → build_faq_plan → (aguardar aprovação) → execute_faq_plan\n"
+        "NUNCA execute_faq_plan sem confirmação explícita do gestor.\n\n"
         "Regras:\n"
         f"- Seja objetivo e profissional. Chame o gestor pelo nome ({user_name}).\n"
         "- Quando gerar um relatório, confirme o file_id retornado pela ferramenta.\n"
         "- Nunca invente dados — use apenas o que as ferramentas retornam.\n"
         "- Se não souber responder, diga claramente.\n"
         "- Responda sempre em português brasileiro.\n"
+        "- Para FAQs: sempre mostre o plano ANTES de executar. Nunca execute sem aprovação.\n"
     )
 
 
@@ -68,6 +72,27 @@ async def llm_node(state: NicoState) -> NicoState:
             lc_messages.append(
                 ToolMessage(content=c, tool_call_id=m.get("tool_call_id", ""))
             )
+
+    # Detecta intenção FAQ a partir da última mensagem do utilizador
+    faq_keywords = {
+        "analyze": ["analise", "diagnóstico", "diagnose", "analis"],
+        "audit": ["duplicada", "duplicado", "vazia", "vazio", "sem resposta", "auditoria", "audit"],
+        "organize": ["organiz", "categori", "agrupe", "reorganiz"],
+        "create": ["crie", "cria", "nova faq", "adicione", "adiciona"],
+        "edit": ["melhore", "melhora", "corrija", "corrige", "actualize", "atualize"],
+        "bulk_clean": ["corrija todos", "limpe todas", "bulk", "em massa"],
+    }
+    last_user_msg = next(
+        (m["content"].lower() for m in reversed(messages) if m.get("role") == "user"),
+        "",
+    )
+    faq_intent = None
+    if any(kw in last_user_msg for kws in faq_keywords.values() for kw in kws):
+        if any(trigger in last_user_msg for trigger in ("faq", "pergunta", "base de conhecimento")):
+            for intent, keywords in faq_keywords.items():
+                if any(kw in last_user_msg for kw in keywords):
+                    faq_intent = intent
+                    break
 
     logger.info(
         "nico_agent.llm_call",
@@ -98,6 +123,7 @@ async def llm_node(state: NicoState) -> NicoState:
         "tool_calls": tool_calls,
         "response":   response.content or "",
         "error":      None,
+        **({"faq_intent": faq_intent} if faq_intent else {}),
     }
 
 
