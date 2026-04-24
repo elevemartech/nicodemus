@@ -181,3 +181,90 @@ async def chat(
         file_id=file_id,
         file_url=file_url,
     )
+
+
+# ── FAQ Manager endpoints ─────────────────────────────────────────────────────
+
+from redis.asyncio import Redis as _FaqRedis  # noqa: E402  (local import — evita circular)
+from agent.tools.faq_tools import execute_faq_plan as _execute_faq_plan  # noqa: E402
+from schemas.faq_schemas import FaqExecuteRequest, FaqExecuteResponse  # noqa: E402
+from schemas.faq_schemas import FaqPlan as _FaqPlan  # noqa: E402
+
+
+@router.post("/faq/execute", response_model=FaqExecuteResponse)
+async def execute_faq_plan_endpoint(
+    body: FaqExecuteRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """
+    Executa as acções aprovadas de um plano FAQ.
+    Carrega o plano do Redis pela plan_id e executa apenas as acções aprovadas.
+    Cada acção é independente — falha numa não para as outras.
+    Requer sessão activa (status=active).
+    """
+    try:
+        session = await SessionService.get_or_resume(db, body.session_id, user.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    if session.status == "completed":
+        raise HTTPException(
+            status_code=400,
+            detail="Sessão encerrada. Crie uma nova sessão para continuar.",
+        )
+
+    result_str = await _execute_faq_plan.ainvoke({
+        "plan_id": body.plan_id,
+        "approved_actions_json": json.dumps(body.actions),
+        "sa_token": user.sa_token,
+        "school_id": user.school_id,
+    })
+
+    result_data = json.loads(result_str)
+    if "error" in result_data:
+        error_msg = result_data["error"]
+        if "permissão" in error_msg:
+            raise HTTPException(status_code=403, detail=error_msg)
+        if "não encontrado" in error_msg or "expirado" in error_msg:
+            raise HTTPException(status_code=404, detail=error_msg)
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    logger.info(
+        "faq.execute.ok",
+        plan_id=body.plan_id,
+        session_id=body.session_id,
+        user_id=user.user_id,
+    )
+    return FaqExecuteResponse(**result_data)
+
+
+@router.get("/faq/plan/{plan_id}", response_model=_FaqPlan)
+async def get_faq_plan(
+    plan_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Recupera um plano FAQ salvo no Redis.
+    TTL: 30 minutos após geração. Útil se o gestor fechar o painel antes de executar.
+    """
+    r = _FaqRedis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        raw = await r.get(f"nicodemus:faq_plan:{plan_id}")
+    finally:
+        await r.aclose()
+
+    if not raw:
+        raise HTTPException(
+            status_code=404,
+            detail="Plano expirado ou não encontrado. Gere um novo plano.",
+        )
+
+    stored = json.loads(raw)
+    if stored.get("school_id") != user.school_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Sem permissão para aceder a este plano.",
+        )
+
+    return _FaqPlan(**stored["plan"])

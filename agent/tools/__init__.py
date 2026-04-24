@@ -16,6 +16,7 @@ from langchain_core.tools import tool
 from tools.generate_docx import generate_docx as _generate_docx
 from tools.generate_xlsx import generate_xlsx as _generate_xlsx
 from tools.query_api import query_api as _query_api
+from agent.tools.faq_tools import analyze_faqs, build_faq_plan, execute_faq_plan, list_faqs
 
 
 @tool
@@ -148,4 +149,8 @@ TOOLS_REGISTRY = [
     generate_financial_report,
     generate_enrollments_report,
     generate_requests_report,
+    list_faqs,
+    analyze_faqs,
+    build_faq_plan,
+    execute_faq_plan,
 ]

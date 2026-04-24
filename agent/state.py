@@ -36,3 +36,8 @@ class NicoState(TypedDict, total=False):
     # Saída final do turno
     response:     str
     error:        str | None
+
+    # ── faq_manager ──────────────────────────────────────────────────
+    faq_intent:      str            # "analyze"|"organize"|"audit"|"create"|"edit"|"bulk_clean"
+    faq_plan:        dict | None    # FaqPlan serializado (evita dependência circular)
+    pending_actions: list[dict]     # acções aprovadas aguardando execução
