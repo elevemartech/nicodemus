@@ -129,6 +129,15 @@ POST /chat/
   → Recebe: { session_id, message }
   → Processa mensagem via NicoAgent (ReAct)
   → Retorna: { session_id, reply, file_id?, file_url? }
+
+POST /chat/faq/execute
+  → Recebe: { session_id, plan_id, actions: [{id, approved, after?}] }
+  → Executa acções aprovadas de um plano FAQ na eleve-api
+  → Requer sessão activa; verifica isolamento por school_id
+
+GET /chat/faq/plan/{plan_id}
+  → Recupera plano FAQ guardado no Redis (TTL 30 min)
+  → 404 se expirado; 403 se school_id não coincide
 ```
 
 ---
@@ -294,9 +303,13 @@ StateGraph: llm_node → should_use_tools → tool_node → llm_node (loop) | EN
 llm_node:   converte messages list[dict] → LangChain messages → gpt-4o-mini
 tool_node:  injeta sa_token + school_id em cada tool call
 TOOLS_REGISTRY (agent/tools/__init__.py):
-  - generate_financial_report  (inadimplência)
+  - generate_financial_report   (inadimplência)
   - generate_enrollments_report (matrículas)
-  - generate_requests_report   (solicitações)
+  - generate_requests_report    (solicitações)
+  - list_faqs                   (leitura de FAQs com cache Redis)
+  - analyze_faqs                (análise determinística via FaqAnalyzer)
+  - build_faq_plan              (gera plano via gpt-4o-mini)
+  - execute_faq_plan            (executa acções aprovadas na eleve-api)
 ```
 
 ### SessionService (services/session_service.py)
@@ -359,3 +372,45 @@ increment_report_count(db, session)
 
 5. **`alembic/env.py` deve ser async** — o arquivo gerado por `alembic init` é síncrono.
    O env.py deste projeto usa `asyncio.run()` + `create_async_engine`.
+
+---
+
+## 14. Módulo FAQ Manager
+
+### Schemas
+- `schemas/faq_schemas.py` — tipos Pydantic do módulo FAQ Manager:
+  FaqItem, FaqDiff, FaqAction, FaqPlan, FaqIssue, FaqAnalysisResult,
+  FaqExecuteRequest, FaqExecuteActionResult, FaqExecuteResponse
+
+### Ficheiros
+- `agent/tools/analyzers/faq_analyzer.py` — FaqAnalyzer — análise determinística pura, sem LLM
+- `agent/tools/faq_tools.py` — 4 ferramentas: list_faqs, analyze_faqs, build_faq_plan, execute_faq_plan
+- `agent/tools/__init__.py` — TOOLS_REGISTRY actualizado com as 4 ferramentas FAQ
+- `agent/state.py` — NicoState com faq_intent, faq_plan, pending_actions
+- `agent/nico_agent.py` — system_prompt actualizado + detecção de intenção FAQ no llm_node
+- `routers/chat.py` — POST /chat/faq/execute + GET /chat/faq/plan/{id}
+
+### Fluxo completo
+1. Gestor envia mensagem com intenção FAQ → llm_node detecta via keywords
+2. LLM chama analyze_faqs → FaqAnalyzer corre análise determinística (zero LLM)
+3. LLM chama build_faq_plan → gpt-4o-mini redige o plano → guardado no Redis (TTL 30min)
+4. Nicodemus apresenta plano com before/after por acção (máx. 20 acções)
+5. Gestor aprova/rejeita/edita acções no frontend
+6. Frontend chama POST /chat/faq/execute com acções aprovadas
+7. execute_faq_plan itera sobre acções → PATCH/POST na eleve-api
+8. Resultado devolvido ao gestor em PT-BR
+
+### Redis keys do módulo FAQ
+```
+nicodemus:faqs:{school_id}        → cache de list_faqs (TTL 5 min)
+nicodemus:faq_plan:{plan_id}      → plano gerado (TTL 30 min)
+  payload: {"school_id": "...", "plan": {...FaqPlan...}}
+```
+
+### Regras de negócio
+- execute_faq_plan NUNCA corre sem plan_id válido no Redis
+- Acções do tipo `deactivate` NUNCA deletam — só mudam `status=inactive`
+- Cada execução logada com user_id, school_id, plan_id, action_id, status
+- Plano associado ao school_id — outro tenant não pode executá-lo (403)
+- FaqAnalyzer é Python puro — NUNCA usar LLM para análise determinística
+- Cache de list_faqs: TTL 5 min por school_id (invalidar manualmente após execute)
