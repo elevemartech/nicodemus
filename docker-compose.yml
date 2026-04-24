@@ -1,9 +1,10 @@
-version: "3.9"
-
 # ===================================================================
-# Nicodemus ADM — Docker Compose (Produção)
+# Nicodemus ADM — Docker Compose
 # Copiloto de gestão escolar | FastAPI + LangGraph
-# Banco: Supabase (externo) — configure DATABASE_URL no .env
+#
+# Inclui PostgreSQL local para desenvolvimento.
+# Para produção com Supabase: defina DATABASE_URL no .env e
+# remova o serviço postgres + dependência correspondente.
 # ===================================================================
 
 services:
@@ -28,21 +29,25 @@ services:
     ports:
       - "8001:8001"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379/0
-      # DATABASE_URL vem do .env → aponta para Supabase
-      # Exemplo: postgresql+asyncpg://user:pass@host:5432/dbname
+      # Aponta para o PostgreSQL local do compose.
+      # Sobrescreva no .env para usar Supabase em produção.
+      - DATABASE_URL=postgresql+asyncpg://nicodemus:nicodemus@postgres:5432/nicodemus_db
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 25s
+      start_period: 40s
     restart: unless-stopped
     deploy:
       resources:
@@ -52,7 +57,31 @@ services:
           memory: 256m
 
   # ----------------------------------------------------------------
-  # Redis — memória conversacional (TTL 24h) + cache
+  # PostgreSQL — banco de dados das sessões conversacionais
+  # Para produção com Supabase: remova este serviço e configure
+  # DATABASE_URL no .env apontando para o Supabase.
+  # ----------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: nicodemus_postgres
+    environment:
+      POSTGRES_DB: nicodemus_db
+      POSTGRES_USER: nicodemus
+      POSTGRES_PASSWORD: nicodemus
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nicodemus -d nicodemus_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5433:5432"  # porta diferente dos outros projetos
+
+  # ----------------------------------------------------------------
+  # Redis — memória conversacional (TTL 24h) + cache FAQ
   # ----------------------------------------------------------------
   redis:
     image: redis:7-alpine
@@ -78,4 +107,5 @@ services:
 # Volumes
 # ----------------------------------------------------------------
 volumes:
+  postgres_data:
   redis_data:

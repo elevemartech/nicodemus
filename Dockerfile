@@ -51,7 +51,6 @@ RUN groupadd --gid 1001 appgroup && \
 WORKDIR /app
 
 # Copiar venv e código do builder
-COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 COPY --from=builder --chown=appuser:appgroup /app /app
 
 # Ativar venv
