@@ -1,11 +1,12 @@
 """
 routers/sessions.py — CRUD de sessões conversacionais.
 
-GET    /sessions/            → lista sessões do gestor autenticado
-POST   /sessions/            → cria nova sessão
-GET    /sessions/{id}/       → detalhe + últimas 50 mensagens
-POST   /sessions/{id}/close/ → encerra sessão e gera resumo via LLM
-DELETE /sessions/{id}/       → soft delete (is_deleted=True)
+GET    /sessions/                    → lista sessões do gestor autenticado
+POST   /sessions/                    → cria nova sessão
+GET    /sessions/{id}/               → detalhe + últimas 50 mensagens
+POST   /sessions/{id}/briefing/      → gera e persiste briefing diário (idempotente)
+POST   /sessions/{id}/close/         → encerra sessão e gera resumo via LLM
+DELETE /sessions/{id}/               → soft delete (is_deleted=True)
 
 Todos os endpoints validam que a sessão pertence ao user_id do JWT.
 """
@@ -20,12 +21,19 @@ from langchain_openai import ChatOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent.tools.get_school_summary import get_school_summary
+from core import memory
 from core.auth import CurrentUser, get_current_user
 from core.database import get_session
 from core.settings import settings
 from models.message import ManagerMessage
 from models.session import ManagerSession
-from schemas.session_types import MessageResponse, SessionDetailResponse, SessionResponse
+from schemas.session_types import (
+    BriefingResponse,
+    MessageResponse,
+    SessionDetailResponse,
+    SessionResponse,
+)
 from services.session_service import SessionService
 
 logger = structlog.get_logger(__name__)
@@ -101,6 +109,98 @@ async def get_session_detail(
         messages=[MessageResponse.model_validate(m) for m in messages],
         summary=session.summary,
     )
+
+
+@router.post("/{session_id}/briefing/", response_model=BriefingResponse)
+async def generate_briefing(
+    session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession  = Depends(get_session),
+):
+    """
+    Gera e persiste o briefing diário como primeira mensagem da sessão.
+
+    Idempotente: se a sessão já tiver mensagens, retorna a primeira mensagem
+    assistant existente sem gerar um novo briefing.
+    """
+    stmt = select(ManagerSession).where(
+        ManagerSession.id         == uuid.UUID(session_id),
+        ManagerSession.user_id    == user.user_id,
+        ManagerSession.is_deleted == False,  # noqa: E712
+    )
+    result = await db.execute(stmt)
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada.")
+
+    # Idempotência — retorna briefing já existente sem gerar outro
+    if session.message_count > 0:
+        msg_stmt = (
+            select(ManagerMessage)
+            .where(
+                ManagerMessage.session_id == session.id,
+                ManagerMessage.role       == "assistant",
+            )
+            .order_by(ManagerMessage.created_at.asc())
+            .limit(1)
+        )
+        msg_result       = await db.execute(msg_stmt)
+        first_assistant  = msg_result.scalar_one_or_none()
+        if first_assistant:
+            return BriefingResponse(
+                session_id=session_id,
+                briefing=first_assistant.content,
+            )
+
+    # Busca dados da escola em paralelo via tool
+    summary_json = await get_school_summary.ainvoke({
+        "sa_token":  user.sa_token,
+        "school_id": user.school_id,
+        "user_name": user.name,
+    })
+
+    # Formata em linguagem natural via gpt-4o-mini
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        api_key=settings.openai_api_key,
+        temperature=0,
+        max_tokens=200,
+    )
+    response = await llm.ainvoke([
+        SystemMessage(
+            content=(
+                f"Você é o Nicodemus, copiloto de gestão escolar.\n"
+                f"Formate os dados abaixo em uma saudação de briefing diário curta e objetiva "
+                f"para o gestor {user.name}. Use linguagem natural e amigável.\n"
+                f"Mencione apenas itens com count > 0. Máximo 3 linhas.\n"
+                f"Termine sugerindo uma ação concreta ou perguntando como pode ajudar."
+            )
+        ),
+        HumanMessage(content=summary_json),
+    ])
+    briefing_text = response.content.strip()
+
+    # Persiste como primeira mensagem da sessão
+    await SessionService.add_message(
+        db,
+        session,
+        "assistant",
+        briefing_text,
+        None,
+        {"type": "briefing"},
+    )
+    await db.commit()
+
+    # Atualiza contexto Redis — user_msg vazio pois não há mensagem do gestor
+    await memory.append_turn(
+        session_id,
+        {"role": "user", "content": ""},
+        {"role": "assistant", "content": briefing_text},
+    )
+
+    logger.info("sessions.briefing", session_id=session_id, user_id=user.user_id)
+    return BriefingResponse(session_id=session_id, briefing=briefing_text)
 
 
 @router.post("/{session_id}/close/", response_model=SessionResponse)
