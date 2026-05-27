@@ -116,6 +116,11 @@ POST /sessions/
 GET /sessions/
   → Lista sessões do gestor autenticado (ordenadas por last_activity_at)
 
+GET /sessions/summary/
+  → Retorna indicadores vivos da escola para a SummaryBar (ELE-203)
+  → Campos: solicitacoes_abertas, matriculas_pendentes, inadimplencia_aberta
+  → REST puro — não passa pelo LangGraph
+
 GET /sessions/{id}/
   → Detalhe da sessão + últimas 50 mensagens
 
@@ -414,3 +419,11 @@ nicodemus:faq_plan:{plan_id}      → plano gerado (TTL 30 min)
 - Plano associado ao school_id — outro tenant não pode executá-lo (403)
 - FaqAnalyzer é Python puro — NUNCA usar LLM para análise determinística
 - Cache de list_faqs: TTL 5 min por school_id (invalidar manualmente após execute)
+
+---
+
+## 15. Histórico de features
+
+- **ELE-203 ✅** — GET /sessions/summary/ criado em `routers/sessions.py`;
+  `SummaryResponse` adicionado a `schemas/session_types.py`;
+  rota posicionada antes de `/{session_id}/` para evitar conflito UUID.
