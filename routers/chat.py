@@ -2,7 +2,7 @@
 routers/chat.py — Endpoint de chat conversacional do Nicodemus ADM.
 
 Fluxo:
-  POST /chat/
+  POST /chat/message
     1. Valida JWT → CurrentUser
     2. Carrega/retoma sessão via SessionService
     3. Carrega contexto Redis
@@ -78,7 +78,7 @@ def _extract_file_id(messages: list[dict]) -> str | None:
     return None
 
 
-@router.post("/", response_model=ChatResponse)
+@router.post("/message", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
     user: CurrentUser = Depends(get_current_user),
