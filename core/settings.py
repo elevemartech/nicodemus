@@ -1,33 +1,32 @@
 from __future__ import annotations
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Eleve API
     eleve_api_url: str = "http://localhost:8000"
-
-    # OpenAI
     openai_api_key: str
-
-    # JWT
     jwt_secret: str
     jwt_algorithm: str = "HS256"
-
-    # Redis
     redis_url: str = "redis://localhost:6379/1"
-
-    # Banco de dados
     database_url: str = "postgresql+asyncpg://nicodemus:nicodemus@localhost:5432/nicodemus_db"
-
-    # File storage
-    file_storage_ttl: int = 900          # 15 min em segundos
+    file_storage_ttl: int = 900
     file_storage_dir: str = "/tmp"
-
-    # App
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: object) -> object:
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
 
 settings = Settings()
