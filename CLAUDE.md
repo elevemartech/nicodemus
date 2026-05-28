@@ -427,3 +427,24 @@ nicodemus:faq_plan:{plan_id}      → plano gerado (TTL 30 min)
 - **ELE-203 ✅** — GET /sessions/summary/ criado em `routers/sessions.py`;
   `SummaryResponse` adicionado a `schemas/session_types.py`;
   rota posicionada antes de `/{session_id}/` para evitar conflito UUID.
+
+---
+
+## 13. Deploy em Produção (Swarm) — Lições aprendidas
+
+### DATABASE_URL
+- Driver obrigatório: `postgresql+asyncpg://`
+- asyncpg **não** funciona com Transaction Pooler do Supabase (porta 6543)
+- Usar **Session Pooler** (mesmo host do pooler, porta **5432**) — IPv4 + asyncpg compatível
+- Conexão direta Supabase (`db.<ref>.supabase.co:5432`) exige IPv6 — VPS usa IPv4, não funciona
+
+### Rede overlay
+- `internal: true` bloqueia acesso à internet — remover quando o serviço precisa sair para APIs externas (Supabase, OpenAI)
+- `nico_redis` continua isolado sem portas expostas — segurança mantida sem `internal: true`
+
+### Imports
+- `tools/__init__.py` deve estar vazio — nunca importar de `agent.tools` aqui
+- Importações circulares entre `tools/` e `agent/tools/` causam `ModuleNotFoundError` no startup
+
+### Password com caracteres especiais na URL
+- `,` → `%2C`, `!` → `%21`, `/` → `%2F`, `%` → `%25`
