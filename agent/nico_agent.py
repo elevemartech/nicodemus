@@ -30,6 +30,13 @@ _llm = ChatOpenAI(
 
 _MAX_TOOL_ITERATIONS = 5
 
+_FAQ_PRIMARY_TRIGGERS = {
+    "faq", "pergunta", "base de conhecimento",
+    "central de ajuda", "help center", "respostas",
+    "dúvida", "dúvidas", "duplicada", "duplicado",
+    "vazia", "sem resposta", "knowledge base",
+}
+
 
 def _build_system_prompt(user_name: str, role: str) -> str:
     return (
@@ -172,7 +179,7 @@ async def llm_node(state: NicoState) -> NicoState:
     )
     faq_intent = None
     if any(kw in last_user_msg for kws in faq_keywords.values() for kw in kws):
-        if any(trigger in last_user_msg for trigger in ("faq", "pergunta", "base de conhecimento")):
+        if any(trigger in last_user_msg for trigger in _FAQ_PRIMARY_TRIGGERS):
             for intent, keywords in faq_keywords.items():
                 if any(kw in last_user_msg for kw in keywords):
                     faq_intent = intent

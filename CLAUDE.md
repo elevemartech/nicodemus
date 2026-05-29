@@ -438,6 +438,11 @@ nicodemus:faq_plan:{plan_id}      → plano gerado (TTL 30 min)
 - **ELE-213 ✅** — `faq_plan: Optional[dict]` adicionado a `ChatResponse`
   (`schemas/session_types.py`) e propagado no endpoint POST /chat/ (`routers/chat.py`).
 
+- **ELE-214 ✅** — `_FAQ_PRIMARY_TRIGGERS` definido como constante de módulo em
+  `agent/nico_agent.py` (13 gatilhos). Frases naturais do gestor como "verifique respostas
+  vazias", "corrija duplicadas" ou "melhore a central de ajuda" agora disparam o fluxo
+  FAQ sem exigir "faq" ou "pergunta" explícitos.
+
 ---
 
 ## 13. Deploy em Produção (Swarm) — Lições aprendidas
