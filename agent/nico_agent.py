@@ -67,7 +67,20 @@ async def llm_node(state: NicoState) -> NicoState:
         if r == "user":
             lc_messages.append(HumanMessage(content=c))
         elif r == "assistant":
-            lc_messages.append(AIMessage(content=c))
+            raw_tcs = m.get("tool_calls", [])
+            if raw_tcs:
+                lc_tool_calls = [
+                    {
+                        "id":   tc.get("id", ""),
+                        "name": tc.get("name", ""),
+                        "args": tc.get("arguments", tc.get("args", {})),
+                        "type": "tool_call",
+                    }
+                    for tc in raw_tcs
+                ]
+                lc_messages.append(AIMessage(content=c, tool_calls=lc_tool_calls))
+            else:
+                lc_messages.append(AIMessage(content=c))
         elif r == "tool":
             lc_messages.append(
                 ToolMessage(content=c, tool_call_id=m.get("tool_call_id", ""))
