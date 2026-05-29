@@ -465,6 +465,15 @@ nicodemus:faq_plan:{plan_id}      → plano gerado (TTL 30 min)
   `ToolCall(id, name, args)` e lê `tc["function"]["name"]` / `json.loads(tc["function"]["arguments"])`.
   Import `ToolCall` adicionado ao topo do módulo.
 
+- **ELE-218 ✅** — Erro de validação Pydantic em `build_faq_plan` corrigido (`agent/tools/faq_tools.py`).
+  Causa raiz: o LLM gerava `"before": "General"` (string) em vez de `"before": {"category": "General"}`
+  (objecto), porque o exemplo no prompt mostrava `"before": null` para todos os tipos de acção.
+  Correcção: bloco de `actions` no prompt substituído por dois exemplos explícitos — um `edit`
+  com `before`/`after` como objectos JSON completos, e um `create` com `before: null`.
+  Quatro regras adicionadas ao fim da lista: `before` e `after` são SEMPRE objectos JSON;
+  `deactivate` exige `after: {"status": "inactive"}`; `edit` de categoria exige
+  `before` com pelo menos `{"category": "..."}` ; `create` exige `before: null`.
+
 ---
 
 ## 13. Deploy em Produção (Swarm) — Lições aprendidas
