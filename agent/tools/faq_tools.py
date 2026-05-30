@@ -238,6 +238,7 @@ async def build_faq_plan(
         "- Para `deactivate`: `after` deve ser {\"status\": \"inactive\"}\n"
         "- Para `edit` de categoria: `before` deve ter pelo menos {\"category\": \"categoria_actual\"}\n"
         "- Para `create`: `before` deve ser null (não uma string)\n"
+        "- Para `edit`: `after` deve conter APENAS os campos que precisam mudar — não copiar campos inalterados do before\n"
     )
 
     try:
@@ -326,16 +327,27 @@ async def execute_faq_plan(
             faq_id = action.get("faq_id")
             action_type = action["type"]
 
+            # Limpar payload — remover None/null e strings vazias
+            after = {k: v for k, v in after.items() if v is not None and v != ""}
+
+            # Normalizar categoria se presente
             if "category" in after:
                 after = {**after, "category": _normalize_category(after["category"])}
 
             try:
                 if action_type == "create":
-                    await client.post("/api/v1/faqs/", json=after)
-                elif action_type == "edit":
-                    await client.patch(f"/api/v1/faqs/{faq_id}/", json=after)
-                elif action_type == "deactivate":
-                    await client.patch(f"/api/v1/faqs/{faq_id}/", json={"status": "inactive"})
+                    payload = {**after, "school": school_id}
+                    payload = {k: v for k, v in payload.items() if v is not None and v != ""}
+                    result = await client.post("/api/v1/faqs/", json=payload)
+                elif action_type in ("edit", "deactivate"):
+                    before = action.get("before") or {}
+                    diff = {k: v for k, v in after.items() if before.get(k) != v}
+                    if not diff:
+                        results.append(FaqExecuteActionResult(
+                            action_id=action_id, status="done"
+                        ))
+                        continue
+                    result = await client.patch(f"/api/v1/faqs/{faq_id}/", json=diff)
                 else:
                     results.append(FaqExecuteActionResult(
                         action_id=action_id,
