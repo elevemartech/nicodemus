@@ -421,6 +421,9 @@ nicodemus:faq_plan:{plan_id}      → plano gerado (TTL 30 min)
 - Plano associado ao school_id — outro tenant não pode executá-lo (403)
 - FaqAnalyzer é Python puro — NUNCA usar LLM para análise determinística
 - Cache de list_faqs: TTL 5 min por school_id (invalidar manualmente após execute)
+- **Payload enviado à eleve-api nunca contém campos `null` nem strings vazias** — filtrado em `execute_faq_plan` antes de qualquer chamada HTTP
+- **`edit` e `deactivate` enviam apenas o diff** (campos que mudaram em relação ao `before`) — evita sobrescrever dados inalterados
+- **`create` inclui sempre `"school": school_id`** no payload — campo obrigatório pela eleve-api
 
 ---
 
@@ -491,23 +494,13 @@ nicodemus:faq_plan:{plan_id}      → plano gerado (TTL 30 min)
   de categorias válidas EN-only adicionada ao prompt de `build_faq_plan` após a regra
   `wrong_category`, reduzindo a probabilidade de o LLM gerar valores em português.
 
----
-
-## 13. Deploy em Produção (Swarm) — Lições aprendidas
-
-### DATABASE_URL
-- Driver obrigatório: `postgresql+asyncpg://`
-- asyncpg **não** funciona com Transaction Pooler do Supabase (porta 6543)
-- Usar **Session Pooler** (mesmo host do pooler, porta **5432**) — IPv4 + asyncpg compatível
-- Conexão direta Supabase (`db.<ref>.supabase.co:5432`) exige IPv6 — VPS usa IPv4, não funciona
-
-### Rede overlay
-- `internal: true` bloqueia acesso à internet — remover quando o serviço precisa sair para APIs externas (Supabase, OpenAI)
-- `nico_redis` continua isolado sem portas expostas — segurança mantida sem `internal: true`
-
-### Imports
-- `tools/__init__.py` deve estar vazio — nunca importar de `agent.tools` aqui
-- Importações circulares entre `tools/` e `agent/tools/` causam `ModuleNotFoundError` no startup
-
-### Password com caracteres especiais na URL
-- `,` → `%2C`, `!` → `%21`, `/` → `%2F`, `%` → `%25`
+- **ELE-221 ✅** — 400 Bad Request em `execute_faq_plan` corrigido — payload limpo e diff exacto (`agent/tools/faq_tools.py`).
+  Três correcções aplicadas: (1) **limpeza do payload** antes de qualquer chamada HTTP:
+  `after = {k: v for k, v in after.items() if v is not None and v != ""}` — campos `null`
+  e strings vazias removidos, evitando rejeição pela eleve-api; (2) **`create` inclui `school`**:
+  payload do POST passa a ser `{**after, "school": school_id}` — campo obrigatório ausente
+  que causava 400; (3) **`edit`/`deactivate` enviam apenas o diff**: calcula
+  `diff = {k: v for k, v in after.items() if before.get(k) != v}` — só os campos que realmente
+  mudaram são enviados no PATCH; se diff vazio, acção marcada `done` sem chamar a API;
+  os dois ramos `edit` e `deactivate` foram unificados num único `elif action_type in ("edit", "deactivate")`.
+  Regra adicionada ao prompt de `build_faq_plan`: `after` de `edit` deve conter APENAS campos alterados.
